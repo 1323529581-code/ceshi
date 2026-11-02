@@ -1,0 +1,64 @@
+name: Build Dylib Only
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Setup Theos
+      uses: Randomblock1/theos-action@v1
+      with:
+        theos-dir: '${{ github.workspace }}/theos'
+
+    # 动态生成所需的 Makefile 和 control 文件
+    - name: Generate Build Files
+      run: |
+        cat << 'EOF' > Makefile
+        TARGET := iphone:clang:latest:14.0
+        ARCHS = arm64 arm64e
+        include $(THEOS)/makefiles/common.mk
+        TWEAK_NAME = StarLustsAuth
+        StarLustsAuth_FILES = AuthPlugin.m
+        StarLustsAuth_CFLAGS = -fobjc-arc
+        StarLustsAuth_FRAMEWORKS = UIKit Foundation
+        include $(THEOS_MAKE_PATH)/tweak.mk
+        EOF
+
+        cat << 'EOF' > control
+        Package: com.xingyushaenv.starlustsauth
+        Name: StarLustsAuth
+        Version: 1.0.0
+        Architecture: iphoneos-arm
+        Description: Auth plugin
+        Maintainer: xingyushaenv
+        Author: xingyushaenv
+        Section: Tweaks
+        Depends: mobilesubstrate
+        EOF
+
+    - name: Build Tweak
+      run: |
+        export THEOS=${{ github.workspace }}/theos
+        make
+
+    # 提取 dylib
+    - name: Extract Dylib
+      run: |
+        mkdir -p output
+        find .theos/obj -name "*.dylib" -exec cp {} output/ \;
+        ls -la output/
+
+    # 上传 dylib 文件
+    - name: Upload Dylib Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: StarLustsAuth-Dylib
+        path: output/*.dylib
